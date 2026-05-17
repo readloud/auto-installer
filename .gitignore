@@ -1,0 +1,7 @@
+build/
+build.md
+node_modules/
+dist/
+*.exe.spec
+*.spec
+package-lock.json

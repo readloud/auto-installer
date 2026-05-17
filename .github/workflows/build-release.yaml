@@ -1,0 +1,969 @@
+name: Build and Release Auto Installer
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  NODE_VERSION: '18'
+  PROJECT_NAME: 'auto-installer'
+  EXE_NAME: 'auto-installer.exe'
+
+jobs:
+  # Job 1: Build EXE untuk Windows
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+      continue-on-error: false
+    
+    - name: Install pkg globally
+      run: npm install -g pkg
+    
+    - name: Build executable
+      run: pkg installer.js --targets node18-win-x64 --output ${{ env.EXE_NAME }}
+    
+    - name: Verify build
+      run: |
+        if (Test-Path ${{ env.EXE_NAME }}) {
+          Write-Host "✅ Build successful: ${{ env.EXE_NAME }}"
+          Get-Item ${{ env.EXE_NAME }} | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "❌ Build failed: ${{ env.EXE_NAME }} not found"
+          exit 1
+        }
+    
+    - name: Upload artifact (Windows EXE)
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-installer
+        path: ${{ env.EXE_NAME }}
+        retention-days: 7
+    
+    # Upload to job output untuk digunakan job lain
+    - name: Set output
+      id: build
+      run: echo "exe_path=${{ env.EXE_NAME }}" >> $GITHUB_OUTPUT
+
+  # Job 2: Build untuk Linux (opsional)
+  build-linux:
+    name: Build Linux Executable
+    runs-on: ubuntu-latest
+    needs: build-windows
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install pkg
+      run: sudo npm install -g pkg
+    
+    - name: Build Linux executable
+      run: pkg installer.js --targets node18-linux-x64 --output auto-installer-linux
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-installer
+        path: auto-installer-linux
+        retention-days: 7
+
+  # Job 3: Create GitHub Release
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+    
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    
+    steps:
+    - name: Get version
+      id: get_version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION="${GITHUB_REF#refs/tags/}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+    
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-installer
+        path: ./artifacts/windows
+    
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-installer
+        path: ./artifacts/linux
+    
+    - name: List artifacts
+      run: |
+        ls -la ./artifacts/windows
+        ls -la ./artifacts/linux
+    
+    - name: Create GitHub Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        name: Release ${{ steps.get_version.outputs.version }}
+        body: |
+          ## Auto Installer Node.js Application
+          
+          ### 📦 Download Links
+          
+          **Windows:**
+          - [Download EXE](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/auto-installer.exe)
+          
+          **Linux:**
+          - [Download Linux Binary](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/auto-installer-linux)
+          
+          ### ✨ Features
+          - ✅ Auto install Node.js & MongoDB
+          - ✅ Download & extract project from URL
+          - ✅ Auto create .env configuration
+          - ✅ Run npm install automatically
+          - ✅ Install and configure PM2
+          - ✅ Auto-start application
+          - ✅ Update capability
+          
+          ### 🚀 Quick Install (Windows)
+          ```powershell
+          # Download and run
+          iwr -Uri "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/auto-installer.exe" -OutFile "installer.exe"
+          .\installer.exe
+          
+          ### 📝 Changelog
+	- Initial release
+	- Automated installation process
+	- PM2 integration for production
+	- Self-update feature
+
+	### ⚠️ Requirements
+	- Windows 10/11 or Windows Server 2016+
+	- Administrator privileges
+	- Internet connection
+
+files: |
+./artifacts/windows/
+e
+n
+v
+.
+E
+X
+E
+N
+A
+M
+E
+.
+/
+a
+r
+t
+i
+f
+a
+c
+t
+s
+/
+l
+i
+n
+u
+x
+/
+a
+u
+t
+o
+−
+i
+n
+s
+t
+a
+l
+l
+e
+r
+−
+l
+i
+n
+u
+x
+d
+r
+a
+f
+t
+:
+f
+a
+l
+s
+e
+p
+r
+e
+r
+e
+l
+e
+a
+s
+e
+:
+f
+a
+l
+s
+e
+e
+n
+v
+:
+G
+I
+T
+H
+U
+B
+T
+O
+K
+E
+N
+:
+env.EXE 
+N
+​
+ AME./artifacts/linux/auto−installer−linuxdraft:falseprerelease:falseenv:GITHUB 
+T
+​
+ OKEN:{{ secrets.GITHUB_TOKEN }}
+
+name: Update major tag (v1, v2, etc)
+run: |
+MAJOR_VERSION=
+(
+e
+c
+h
+o
+"
+(echo"{{ steps.get_version.outputs.version }}" | cut -d. -f1)
+git tag -f 
+M
+A
+J
+O
+R
+V
+E
+R
+S
+I
+O
+N
+g
+i
+t
+p
+u
+s
+h
+−
+f
+o
+r
+i
+g
+i
+n
+MAJOR 
+V
+​
+ ERSIONgitpush−foriginMAJOR_VERSION
+if: success()
+
+Job 4: Upload ke GitHub Packages (NPM)
+publish-npm:
+name: Publish to GitHub Packages
+runs-on: ubuntu-latest
+needs: [create-release]
+if: success()
+
+steps:
+
+name: Checkout code
+uses: actions/checkout@v4
+
+name: Setup Node.js
+uses: actions/setup-node@v4
+with:
+node-version: 
+e
+n
+v
+.
+N
+O
+D
+E
+V
+E
+R
+S
+I
+O
+N
+r
+e
+g
+i
+s
+t
+r
+y
+−
+u
+r
+l
+:
+′
+h
+t
+t
+p
+s
+:
+/
+/
+n
+p
+m
+.
+p
+k
+g
+.
+g
+i
+t
+h
+u
+b
+.
+c
+o
+m
+′
+s
+c
+o
+p
+e
+:
+′
+@
+env.NODE 
+V
+​
+ ERSIONregistry−url: 
+′
+ https://npm.pkg.github.com 
+′
+ scope: 
+′
+ @{{ github.repository_owner }}'
+
+name: Get version from release
+id: get_version
+run: |
+VERSION="
+n
+e
+e
+d
+s
+.
+c
+r
+e
+a
+t
+e
+−
+r
+e
+l
+e
+a
+s
+e
+.
+o
+u
+t
+p
+u
+t
+s
+.
+v
+e
+r
+s
+i
+o
+n
+"
+e
+c
+h
+o
+"
+v
+e
+r
+s
+i
+o
+n
+=
+needs.create−release.outputs.version"echo"version={VERSION#v}" >> $GITHUB_OUTPUT
+
+name: Update package.json version
+run: |
+npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version
+cat package.json
+
+name: Download Windows EXE for package
+uses: actions/download-artifact@v4
+with:
+name: windows-installer
+path: ./
+
+name: Create .npmrc for GitHub Packages
+run: |
+echo "@
+g
+i
+t
+h
+u
+b
+.
+r
+e
+p
+o
+s
+i
+t
+o
+r
+y
+o
+w
+n
+e
+r
+:
+r
+e
+g
+i
+s
+t
+r
+y
+=
+h
+t
+t
+p
+s
+:
+/
+/
+n
+p
+m
+.
+p
+k
+g
+.
+g
+i
+t
+h
+u
+b
+.
+c
+o
+m
+/
+"
+>
+>
+.
+n
+p
+m
+r
+c
+e
+c
+h
+o
+"
+/
+/
+n
+p
+m
+.
+p
+k
+g
+.
+g
+i
+t
+h
+u
+b
+.
+c
+o
+m
+/
+:
+a
+u
+t
+h
+T
+o
+k
+e
+n
+=
+github.repository 
+o
+​
+ wner:registry=https://npm.pkg.github.com/">>.npmrcecho"//npm.pkg.github.com/: 
+a
+​
+ uthToken={{ secrets.GITHUB_TOKEN }}" >> .npmrc
+
+name: Publish to GitHub Packages
+run: npm publish
+env:
+NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+name: Publish to npm (optional)
+if: false # Set to true if you want to publish to public npm
+run: npm publish --registry=https://registry.npmjs.org
+env:
+NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+Job 5: Update latest.json untuk auto-updater
+update-latest-json:
+name: Update Latest Version Info
+runs-on: ubuntu-latest
+needs: [create-release]
+
+steps:
+
+name: Checkout gh-pages branch
+uses: actions/checkout@v4
+with:
+ref: 'gh-pages'
+path: gh-pages
+
+name: Get version info
+id: version_info
+run: |
+VERSION="
+n
+e
+e
+d
+s
+.
+c
+r
+e
+a
+t
+e
+−
+r
+e
+l
+e
+a
+s
+e
+.
+o
+u
+t
+p
+u
+t
+s
+.
+v
+e
+r
+s
+i
+o
+n
+"
+D
+O
+W
+N
+L
+O
+A
+D
+U
+R
+L
+=
+"
+h
+t
+t
+p
+s
+:
+/
+/
+g
+i
+t
+h
+u
+b
+.
+c
+o
+m
+/
+needs.create−release.outputs.version"DOWNLOAD 
+U
+​
+ RL="https://github.com/{{ github.repository }}/releases/download/
+V
+E
+R
+S
+I
+O
+N
+/
+a
+u
+t
+o
+−
+i
+n
+s
+t
+a
+l
+l
+e
+r
+.
+e
+x
+e
+"
+e
+c
+h
+o
+"
+v
+e
+r
+s
+i
+o
+n
+=
+VERSION/auto−installer.exe"echo"version=VERSION" >> 
+G
+I
+T
+H
+U
+B
+O
+U
+T
+P
+U
+T
+e
+c
+h
+o
+"
+d
+o
+w
+n
+l
+o
+a
+d
+u
+r
+l
+=
+GITHUB 
+O
+​
+ UTPUTecho"download 
+u
+​
+ rl=DOWNLOAD_URL" >> $GITHUB_OUTPUT
+
+name: Create latest.json
+run: |
+cat > gh-pages/latest.json << EOF
+{
+"version": "
+s
+t
+e
+p
+s
+.
+v
+e
+r
+s
+i
+o
+n
+i
+n
+f
+o
+.
+o
+u
+t
+p
+u
+t
+s
+.
+v
+e
+r
+s
+i
+o
+n
+"
+,
+"
+d
+o
+w
+n
+l
+o
+a
+d
+u
+r
+l
+"
+:
+"
+steps.version 
+i
+​
+ nfo.outputs.version","download 
+u
+​
+ rl":"{{ steps.version_info.outputs.download_url }}",
+"release_date": "
+(
+d
+a
+t
+e
+−
+I
+s
+e
+c
+o
+n
+d
+s
+)
+"
+,
+"
+c
+h
+a
+n
+g
+e
+l
+o
+g
+"
+:
+"
+h
+t
+t
+p
+s
+:
+/
+/
+g
+i
+t
+h
+u
+b
+.
+c
+o
+m
+/
+(date−Iseconds)","changelog":"https://github.com/{{ github.repository }}/releases/tag/
+s
+t
+e
+p
+s
+.
+v
+e
+r
+s
+i
+o
+n
+i
+n
+f
+o
+.
+o
+u
+t
+p
+u
+t
+s
+.
+v
+e
+r
+s
+i
+o
+n
+"
+,
+"
+c
+h
+e
+c
+k
+s
+u
+m
+"
+:
+"
+steps.version 
+i
+​
+ nfo.outputs.version","checksum":"{{ steps.create_release.outputs.checksum }}"
+}
+EOF
+
+cat gh-pages/latest.json
+
+name: Deploy to gh-pages
+uses: peaceiris/actions-gh-pages@v3
+with:
+github_token: ${{ secrets.GITHUB_TOKEN }}
+publish_dir: ./gh-pages
+publish_branch: gh-pages
+keep_files: false

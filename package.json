@@ -1,0 +1,38 @@
+{
+  "name": "@readloud/auto-installer",
+  "version": "1.0.0",
+  "description": "Auto Installer for Node.js Applications",
+  "main": "installer.js",
+  "bin": {
+    "auto-installer": "./installer.js",
+    "download-installer": "./download-installer.js"
+  },
+  "scripts": {
+    "build": "pkg installer.js --targets node18-win-x64 --output auto-installer.exe",
+    "release": "npm run build && npm publish",
+    "download": "node download-installer.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/readloud/auto-installer.git"
+  },
+  "keywords": [
+    "installer",
+    "nodejs",
+    "mongodb",
+    "pm2",
+    "automation"
+  ],
+  "author": "readloud",
+  "license": "MIT",
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  }
+}

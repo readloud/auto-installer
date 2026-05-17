@@ -1,0 +1,30 @@
+name: Monitoring and Notifications
+
+on:
+  workflow_run:
+    workflows: ["Build and Release Auto Installer"]
+    types:
+      - completed
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Check workflow status
+      if: github.event.workflow_run.conclusion != 'success'
+      run: |
+        echo "Workflow failed!"
+        # Add your notification logic here (Slack, Discord, Email)
+    
+    - name: Send to Discord (example)
+      if: github.event.workflow_run.conclusion == 'success'
+      uses: sarisia/actions-status-discord@v1
+      with:
+        webhook: ${{ secrets.DISCORD_WEBHOOK }}
+        title: "Build Successful"
+        description: "New release has been published!"
+        color: 0x00ff00
